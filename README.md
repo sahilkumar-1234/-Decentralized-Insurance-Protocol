@@ -1,6 +1,3 @@
-# -Decentralized-Insurance-Protocol
-
-
 # Decentralized Insurance Protocol
 
 ## Project Description
