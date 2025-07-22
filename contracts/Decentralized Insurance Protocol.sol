@@ -51,7 +51,7 @@ contract DecentralizedInsuranceProtocol {
     mapping(uint256 => Claim) public claims;
     mapping(uint256 => mapping(address => bool)) public hasVoted;
     mapping(address => uint256) public stakerRewards;
-    mapping(uint256 => address[]) public stakers; // ✅ New mapping to track stakers per pool
+    mapping(uint256 => address[]) public stakers;
 
     uint256 public nextPoolId = 1;
     uint256 public nextClaimId = 1;
@@ -107,7 +107,7 @@ contract DecentralizedInsuranceProtocol {
         });
 
         stakedAmounts[poolId][msg.sender] = msg.value;
-        stakers[poolId].push(msg.sender); // ✅ track creator as first staker
+        stakers[poolId].push(msg.sender);
 
         emit PoolCreated(poolId, _poolName, msg.sender);
         emit TokensStaked(poolId, msg.sender, msg.value);
@@ -117,7 +117,7 @@ contract DecentralizedInsuranceProtocol {
         require(msg.value >= MIN_STAKE, "Minimum stake not met");
 
         if (stakedAmounts[_poolId][msg.sender] == 0) {
-            stakers[_poolId].push(msg.sender); // ✅ first-time staker
+            stakers[_poolId].push(msg.sender);
         }
 
         stakedAmounts[_poolId][msg.sender] += msg.value;
@@ -255,6 +255,26 @@ contract DecentralizedInsuranceProtocol {
             }
         }
     }
+
+    // === ✅ New Function: Unstake Tokens ===
+    function unstakeTokens(uint256 _poolId, uint256 _amount) external onlyActivePool(_poolId) {
+        require(_amount > 0, "Amount must be greater than zero");
+        require(stakedAmounts[_poolId][msg.sender] >= _amount, "Not enough staked");
+
+        for (uint256 i = 1; i < nextClaimId; i++) {
+            Claim memory claim = claims[i];
+            if (
+                claim.poolId == _poolId &&
+                !claim.isResolved &&
+                block.timestamp <= claim.votingDeadline &&
+                hasVoted[i][msg.sender]
+            ) {
+                revert("Cannot unstake during active voting");
+            }
+        }
+
+        stakedAmounts[_poolId][msg.sender] -= _amount;
+        insurancePools[_poolId].totalStaked -= _amount;
+        payable(msg.sender).transfer(_amount);
+    }
 }
-
-
