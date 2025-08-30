@@ -67,6 +67,8 @@ contract DecentralizedInsuranceProtocol {
     event ClaimVoted(uint256 indexed claimId, address indexed voter, bool vote);
     event ClaimResolved(uint256 indexed claimId, bool approved, uint256 payoutAmount);
     event RewardsClaimed(address indexed staker, uint256 amount);
+    event PoolClosed(uint256 indexed poolId, address indexed creator);
+    event TokensUnstaked(uint256 indexed poolId, address indexed staker, uint256 amount);
 
     // === Modifiers ===
     modifier onlyActivePool(uint256 _poolId) {
@@ -256,7 +258,7 @@ contract DecentralizedInsuranceProtocol {
         }
     }
 
-    // === ✅ New Function: Unstake Tokens ===
+    // === ✅ Unstake Tokens ===
     function unstakeTokens(uint256 _poolId, uint256 _amount) external onlyActivePool(_poolId) {
         require(_amount > 0, "Amount must be greater than zero");
         require(stakedAmounts[_poolId][msg.sender] >= _amount, "Not enough staked");
@@ -276,5 +278,46 @@ contract DecentralizedInsuranceProtocol {
         stakedAmounts[_poolId][msg.sender] -= _amount;
         insurancePools[_poolId].totalStaked -= _amount;
         payable(msg.sender).transfer(_amount);
+
+        emit TokensUnstaked(_poolId, msg.sender, _amount);
+    }
+
+    // === ✅ Close Pool ===
+    function closeInsurancePool(uint256 _poolId) external onlyActivePool(_poolId) {
+        InsurancePool storage pool = insurancePools[_poolId];
+        require(msg.sender == pool.creator, "Only pool creator can close");
+        
+        // Ensure no active policies remain
+        for (uint256 i = 0; i < stakers[_poolId].length; i++) {
+            address staker = stakers[_poolId][i];
+            Policy memory policy = policies[_poolId][staker];
+            if (policy.isActive && policy.endTime > block.timestamp) {
+                revert("Active policies exist");
+            }
+        }
+
+        // Ensure no unresolved claims
+        for (uint256 i = 1; i < nextClaimId; i++) {
+            Claim memory claim = claims[i];
+            if (claim.poolId == _poolId && !claim.isResolved) {
+                revert("Unresolved claims exist");
+            }
+        }
+
+        pool.isActive = false;
+        emit PoolClosed(_poolId, msg.sender);
+    }
+
+    // === ✅ Withdraw All Staked Tokens after Pool Closure ===
+    function withdrawAllStaked(uint256 _poolId) external {
+        InsurancePool memory pool = insurancePools[_poolId];
+        require(!pool.isActive, "Pool must be closed to withdraw");
+        uint256 amount = stakedAmounts[_poolId][msg.sender];
+        require(amount > 0, "No stake to withdraw");
+
+        stakedAmounts[_poolId][msg.sender] = 0;
+        payable(msg.sender).transfer(amount);
+
+        emit TokensUnstaked(_poolId, msg.sender, amount);
     }
 }
